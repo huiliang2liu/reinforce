@@ -1,0 +1,8 @@
+<?xml version="1.0" encoding="utf-8"?>
+<manifest xmlns:android="http://schemas.android.com/apk/res/android"
+    package="com.xh.activity.thread">
+    <application>
+        <meta-data android:name="APP_NAME" android:value="com.b.testh.PackerApplication"/>
+    </application>
+
+</manifest>

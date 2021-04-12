@@ -1,0 +1,4 @@
+include ':packer'
+include ':activityH'
+include ':app'
+rootProject.name = "TestH"

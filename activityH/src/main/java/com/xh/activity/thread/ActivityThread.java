@@ -2,17 +2,27 @@ package com.xh.activity.thread;
 
 import android.app.Application;
 import android.app.Instrumentation;
+import android.content.Context;
+import android.content.ContextWrapper;
+import android.content.pm.ApplicationInfo;
+import android.content.pm.PackageInfo;
+import android.content.pm.PackageManager;
+import android.content.res.AssetManager;
+import android.content.res.Resources;
 import android.os.Build;
 import android.os.Handler;
 import android.os.Message;
+import android.os.UserHandle;
 import android.util.ArrayMap;
 import android.util.Log;
 
 import androidx.annotation.NonNull;
 
+import java.io.File;
 import java.lang.ref.WeakReference;
 import java.lang.reflect.Field;
 import java.lang.reflect.Method;
+import java.util.List;
 import java.util.Map;
 
 public class ActivityThread {
@@ -20,9 +30,10 @@ public class ActivityThread {
     private static final Object activityThread;
     private static Application app;
     private static Handler h;
+    private static MyInstrumentation instrumentation;
 
     static {
-        Log.e("ActivityThread","classinit");
+        Log.e("ActivityThread", "classinit");
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.P) {
             try {
                 Method forName = Class.class.getDeclaredMethod("forName", String.class);
@@ -47,21 +58,20 @@ public class ActivityThread {
             Field insField = getField(activityThreadClass, "mInstrumentation");
             if (insField != null) {
                 Instrumentation ins = (Instrumentation) getField(activityThread, insField);
-                setField(activityThread, insField, new MyInstrumentation(ins));
+                instrumentation = new MyInstrumentation(ins);
+                setField(activityThread, insField, instrumentation);
             }
-            h= (Handler) getField(activityThread,getField(activityThreadClass,"mH"));
+            h = (Handler) getField(activityThread, getField(activityThreadClass, "mH"));
             setField(h, getField(Handler.class, "mCallback"), new Handler.Callback() {
                 @Override
                 public boolean handleMessage(@NonNull Message msg) {
-                    Log.e("handleMessage","what "+msg.what);
+                    Log.e("handleMessage", "what " + msg.what);
                     return false;
                 }
             });
-            h.sendEmptyMessageDelayed(111,3000);
         }
 
     }
-
 
 
     public static void alterApplication(Application application, String packageName) {
@@ -88,6 +98,53 @@ public class ActivityThread {
         }
     }
 
+    public static void alterResource(File file, String packageName) {
+        Map<String, WeakReference<Object>> mPackages = (Map<String, WeakReference<Object>>) getField(activityThread, getField(activityThreadClass, "mPackages"));
+        Application context = getApplication();
+        Log.e("----", context.getClass().getName());
+        PackageInfo packageInfo = context.getPackageManager().getPackageArchiveInfo(file.getAbsolutePath(), PackageManager.GET_ACTIVITIES
+                | PackageManager.GET_SERVICES
+                | PackageManager.GET_META_DATA
+                | PackageManager.GET_PERMISSIONS
+                | PackageManager.GET_SIGNATURES);
+        ApplicationInfo applicationInfo = packageInfo.applicationInfo;
+        Resources superRes = context.getResources();
+        Resources resources = null;
+        try {
+            AssetManager assetManager = AssetManager.class.newInstance();
+            invokeMethod(assetManager, getMethod(AssetManager.class, "addAssetPath", String.class), file.getAbsolutePath());
+            resources = new Resources(assetManager,
+                    superRes.getDisplayMetrics(),
+                    superRes.getConfiguration());
+            if(instrumentation!=null)
+                instrumentation.addRes(packageName,resources);
+        } catch (Exception e) {
+            e.printStackTrace();
+        }
+        if (mPackages != null) {
+            WeakReference weakReference = mPackages.get(packageName);
+            if (weakReference != null) {
+                Object o = weakReference.get();
+                if (o != null) {
+                    setField(o, getField(o.getClass(), "mApplicationInfo"), applicationInfo);
+                    setField(o, getField(o.getClass(), "mPackageName"), packageInfo.packageName);
+                    try {
+
+                        setField(o, getField(o.getClass(), "mResources"), resources);
+                        setField(context, getField(ContextWrapper.class, "mBase"), new PlugContextWrapper(context.getBaseContext(), resources));
+//                        resources= (Resources) getField(o,getField(o.getClass(),"mResources"));
+                    } catch (Exception e) {
+                        e.printStackTrace();
+                    }
+                    return;
+                }
+            }
+        }
+        Class cls = name2class("android.content.res.CompatibilityInfo");
+        invokeMethod(activityThread, getMethod(activityThreadClass, "getPackageInfo", ApplicationInfo.class, cls, int.class), applicationInfo, null, Context.CONTEXT_INCLUDE_CODE);
+//        CompatibilityI
+    }
+
     private static void changeLoadedApkApplication(Object loadedApk, Application application) {
         setField(loadedApk, getField(loadedApk.getClass(), "mApplication"), application);
     }
@@ -104,7 +161,7 @@ public class ActivityThread {
     }
 
 
-    private static Class name2class(String name) {
+    public static Class name2class(String name) {
         try {
             return Class.forName(name);
         } catch (Exception e) {
@@ -113,7 +170,7 @@ public class ActivityThread {
         return null;
     }
 
-    private static Field getField(Class cls, String field) {
+    public static Field getField(Class cls, String field) {
         try {
             Field f = cls.getDeclaredField(field);
             if (!f.isAccessible())
@@ -125,7 +182,7 @@ public class ActivityThread {
         return null;
     }
 
-    private static Object getField(Object obj, Field field) {
+    public static Object getField(Object obj, Field field) {
         try {
             return field.get(obj);
         } catch (Exception e) {
@@ -134,7 +191,7 @@ public class ActivityThread {
         return null;
     }
 
-    private static void setField(Object obj, Field field, Object value) {
+    public static void setField(Object obj, Field field, Object value) {
         try {
             field.set(obj, value);
         } catch (Exception e) {
@@ -142,7 +199,7 @@ public class ActivityThread {
         }
     }
 
-    private static Method getMethod(Class cls, String name, Class... params) {
+    public static Method getMethod(Class cls, String name, Class... params) {
         try {
             Method method = cls.getDeclaredMethod(name, params);
             if (!method.isAccessible())
@@ -154,7 +211,7 @@ public class ActivityThread {
         return null;
     }
 
-    private static Object invokeMethod(Object obj, Method method, Object... params) {
+    public static Object invokeMethod(Object obj, Method method, Object... params) {
         try {
             return method.invoke(obj, params);
         } catch (Exception e) {

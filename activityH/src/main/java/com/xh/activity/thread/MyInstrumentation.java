@@ -7,6 +7,7 @@ import android.app.Instrumentation;
 import android.app.UiAutomation;
 import android.content.ComponentName;
 import android.content.Context;
+import android.content.ContextWrapper;
 import android.content.Intent;
 import android.content.IntentFilter;
 import android.content.pm.ActivityInfo;
@@ -14,6 +15,7 @@ import android.content.pm.PackageInfo;
 import android.content.pm.PackageManager;
 import android.content.pm.ResolveInfo;
 import android.content.res.Configuration;
+import android.content.res.Resources;
 import android.net.Uri;
 import android.os.Build;
 import android.os.Bundle;
@@ -28,8 +30,13 @@ import android.view.KeyEvent;
 import android.view.MotionEvent;
 
 
+import androidx.appcompat.app.AppCompatActivity;
+import androidx.appcompat.widget.VectorEnabledTintResources;
+
 import java.lang.reflect.Field;
 import java.lang.reflect.Method;
+import java.util.HashMap;
+import java.util.Map;
 
 public class MyInstrumentation extends Instrumentation {
 
@@ -41,6 +48,7 @@ public class MyInstrumentation extends Instrumentation {
     public static final String ORIGINL_PACKAGE = "original_package";
     private static final String TAG = "PlugInstrumentation";
     private Instrumentation instrumentation;
+    private Map<String, Resources> resourcesMap;
 
 
     static {
@@ -77,13 +85,19 @@ public class MyInstrumentation extends Instrumentation {
 
     public MyInstrumentation(Instrumentation instrumentation) {
         this.instrumentation = instrumentation;
+        resourcesMap = new HashMap<>();
+    }
+
+    public void addRes(String packageName, Resources resources) {
+        if (packageName == null || packageName.isEmpty() || resources == null)
+            return;
+        resourcesMap.put(packageName, resources);
     }
 
     @Override
     public Activity newActivity(Class<?> clazz, Context context, IBinder token, Application application, Intent intent, ActivityInfo info, CharSequence title, Activity parent, String id, Object lastNonConfigurationInstance) throws IllegalAccessException, InstantiationException {
         Activity activity = instrumentation.newActivity(clazz, context, token, application, intent, info, title, parent, id, lastNonConfigurationInstance);
         replaceLayout(activity);
-        Log.e("addaad","newActivity");
         return activity;
     }
 
@@ -91,7 +105,6 @@ public class MyInstrumentation extends Instrumentation {
     public Activity newActivity(ClassLoader cl, String className, Intent intent) throws ClassNotFoundException, IllegalAccessException, InstantiationException {
         Activity activity = instrumentation.newActivity(cl, className, intent);
         replaceLayout(activity);
-        Log.e("addaad","newActivity1");
         return activity;
     }
 
@@ -100,13 +113,26 @@ public class MyInstrumentation extends Instrumentation {
 
     @Override
     public void callActivityOnCreate(Activity activity, Bundle icicle) {
+        callActivityOnCreate(activity);
         instrumentation.callActivityOnCreate(activity, icicle);
     }
 
     @TargetApi(21)
     @Override
     public void callActivityOnCreate(Activity activity, Bundle icicle, PersistableBundle persistentState) {
+        callActivityOnCreate(activity);
         instrumentation.callActivityOnCreate(activity, icicle, persistentState);
+    }
+
+    private void callActivityOnCreate(Activity activity) {
+        Resources resources = resourcesMap.get(activity.getPackageName());
+        if (resources != null) {
+            Context base = new PlugContextWrapper(activity.getBaseContext(), resources);
+//                    Log.e(TAG,""+ActivityThread.getField(activity,ActivityThread.getField(ContextThemeWrapper.class,"mResources")));
+            ActivityThread.setField(activity, ActivityThread.getField(ContextWrapper.class, "mBase"), base);
+            ActivityThread.setField(activity, ActivityThread.getField(ContextThemeWrapper.class, "mResources"), resources);
+        }
+
     }
 
     @Override
@@ -366,7 +392,7 @@ public class MyInstrumentation extends Instrumentation {
 
     @Override
     public Application newApplication(ClassLoader cl, String className, Context context) throws ClassNotFoundException, IllegalAccessException, InstantiationException {
-        Log.e("dadaa","newApplication "+className);
+        Log.e("dadaa", "newApplication " + className);
         return instrumentation.newApplication(cl, className, context);
     }
 

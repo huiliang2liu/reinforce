@@ -41,7 +41,10 @@ public class PackerApplication extends Application {
                 attachBaseContext.setAccessible(true);
             attachBaseContext.invoke(application,getBaseContext());
             application.onCreate();
+            String packageName=getPackageName();
+            Log.e("===="," "+getResources().getResourceName(2131427356));
             ActivityThread.alterApplication(application,getPackageName());
+            ActivityThread.alterResource(new File(new File(getCacheDir(),"dex"),"rel.apk"),packageName);
         } catch (Exception e) {
             e.printStackTrace();
         }
